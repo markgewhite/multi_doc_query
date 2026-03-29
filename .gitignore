@@ -21,5 +21,8 @@ Thumbs.db
 # Chainlit
 .chainlit/
 
+# Testing
+.pytest_cache/
+
 # Application data
 *.log
