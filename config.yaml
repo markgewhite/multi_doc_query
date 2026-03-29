@@ -14,7 +14,7 @@ retrieval:
   reranker_model: "bge-reranker-v2-m3"
 
 paths:
-  chroma_db: "~/.query_doc/chroma_db/"
+  chroma_db: "~/.multi_doc_query/chroma_db/"
   documents: ""
 
 scanning:

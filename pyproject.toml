@@ -1,5 +1,5 @@
 [project]
-name = "query-doc"
+name = "multi-doc-query"
 version = "0.1.0"
 description = "Local multi-document RAG chatbot using Chainlit and Ollama"
 requires-python = ">=3.11"

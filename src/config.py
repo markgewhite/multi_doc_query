@@ -27,7 +27,7 @@ class RetrievalConfig(BaseModel):
 
 
 class PathsConfig(BaseModel):
-    chroma_db: Path = Path("~/.query_doc/chroma_db/")
+    chroma_db: Path = Path("~/.multi_doc_query/chroma_db/")
     documents: str = ""
 
     @field_validator("chroma_db", mode="before")
