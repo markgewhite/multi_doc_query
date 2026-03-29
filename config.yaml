@@ -1,0 +1,21 @@
+models:
+  llm: "llama3.1:8b"
+  embedding: "mxbai-embed-large"
+
+chunking:
+  chunk_size: 512
+  chunk_overlap: 100
+
+retrieval:
+  bm25_top_k: 20
+  semantic_top_k: 20
+  rrf_k: 60
+  rerank_top_k: 10
+  reranker_model: "bge-reranker-v2-m3"
+
+paths:
+  chroma_db: "~/.query_doc/chroma_db/"
+  documents: ""
+
+scanning:
+  recursive: true
