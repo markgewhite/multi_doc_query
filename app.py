@@ -1,7 +1,15 @@
+from pathlib import Path
+
 import chainlit as cl
+import chromadb
 
 from src.config import ConfigError, load_config
+from src.generation.answerer import answer
 from src.health_check import check_models, check_ollama
+from src.ingestion.chunker import chunk_documents
+from src.ingestion.loader import load_folder
+from src.retrieval.embeddings import make_ollama_embed_fn
+from src.retrieval.vector_store import VectorStore
 
 
 @cl.on_chat_start
@@ -29,6 +37,70 @@ async def on_chat_start():
         ).send()
         return
 
-    await cl.Message(
-        content="No documents indexed. Configure your documents folder in settings to get started."
-    ).send()
+    # Set up vector store with persistent ChromaDB and Ollama embeddings
+    embed_fn = make_ollama_embed_fn(model=config.models.embedding)
+    chroma_client = chromadb.PersistentClient(
+        path=str(config.paths.chroma_db),
+    )
+    store = VectorStore(embed_fn=embed_fn, client=chroma_client)
+    cl.user_session.set("store", store)
+
+    # Ingest documents if a folder is configured
+    doc_count = len(store.get_all_texts())
+    if config.paths.documents and Path(config.paths.documents).exists():
+        docs = load_folder(
+            Path(config.paths.documents),
+            recursive=config.scanning.recursive,
+        )
+        if docs:
+            chunks = chunk_documents(
+                docs,
+                chunk_size=config.chunking.chunk_size,
+                chunk_overlap=config.chunking.chunk_overlap,
+            )
+            store.add_chunks(chunks)
+            doc_count = len(store.get_all_texts())
+            await cl.Message(
+                content=f"Ingested {len(docs)} pages into {doc_count} chunks. Ask me anything!"
+            ).send()
+            return
+
+    if doc_count > 0:
+        await cl.Message(
+            content=f"{doc_count} chunks indexed. Ask me anything!"
+        ).send()
+    else:
+        await cl.Message(
+            content="No documents indexed. Configure your documents folder in `config.yaml` to get started."
+        ).send()
+
+
+@cl.on_message
+async def on_message(message: cl.Message):
+    config = cl.user_session.get("config")
+    store = cl.user_session.get("store")
+
+    if store is None:
+        await cl.Message(content="No document store available. Please restart the app.").send()
+        return
+
+    if len(store.get_all_texts()) == 0:
+        await cl.Message(
+            content="No documents indexed yet. Configure your documents folder in `config.yaml` first."
+        ).send()
+        return
+
+    results = store.search(
+        message.content,
+        k=config.retrieval.semantic_top_k,
+    )
+
+    # Stream the answer token by token
+    msg = cl.Message(content="")
+    async for token in answer(
+        message.content,
+        results,
+        model=config.models.llm,
+    ):
+        await msg.stream_token(token)
+    await msg.send()
