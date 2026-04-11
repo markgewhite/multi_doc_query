@@ -2,7 +2,7 @@ import chainlit as cl
 import chromadb
 
 from src.config import ConfigError, load_config
-from src.generation.answerer import answer
+from src.generation.answerer import answer, build_source_elements
 from src.health_check import check_models, check_ollama
 from src.ingestion.chunker import chunk_documents
 from src.ingestion.loader import load_folder
@@ -102,3 +102,12 @@ async def on_message(message: cl.Message):
     ):
         await msg.stream_token(token)
     await msg.send()
+
+    # Attach expandable source chunks below the answer
+    for el_data in build_source_elements(results):
+        element = cl.Text(
+            name=el_data["name"],
+            content=el_data["content"],
+            display=el_data["display"],
+        )
+        await element.send(for_id=msg.id)
