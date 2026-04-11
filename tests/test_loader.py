@@ -113,3 +113,33 @@ def test_docx_metadata_relative_path():
     docs = load_folder(FIXTURES)
     docx_docs = [d for d in docs if d.metadata["filename"] == "sample.docx"]
     assert docx_docs[0].metadata["relative_path"] == "sample.docx"
+
+
+def test_load_txt_returns_documents():
+    """Loading a folder with a TXT file returns Documents with doc_type='txt'."""
+    docs = load_folder(FIXTURES)
+    txt_docs = [d for d in docs if d.metadata["filename"] == "sample.txt"]
+    assert len(txt_docs) > 0
+    assert txt_docs[0].metadata["doc_type"] == "txt"
+    assert txt_docs[0].text.strip()
+
+
+def test_load_md_returns_documents():
+    """Loading a folder with an MD file returns Documents with doc_type='md'."""
+    docs = load_folder(FIXTURES)
+    md_docs = [d for d in docs if d.metadata["filename"] == "sample.md"]
+    assert len(md_docs) > 0
+    assert md_docs[0].metadata["doc_type"] == "md"
+    assert md_docs[0].text.strip()
+
+
+def test_load_mixed_formats(tmp_path):
+    """A folder with PDF, DOCX, TXT, and MD loads all formats."""
+    import shutil
+
+    for name in ("sample.pdf", "sample.docx", "sample.txt", "sample.md"):
+        shutil.copy(FIXTURES / name, tmp_path / name)
+
+    docs = load_folder(tmp_path)
+    doc_types = {d.metadata["doc_type"] for d in docs}
+    assert doc_types == {"pdf", "docx", "txt", "md"}
