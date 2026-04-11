@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import chainlit as cl
 import chromadb
 
@@ -47,9 +45,9 @@ async def on_chat_start():
 
     # Ingest documents if a folder is configured
     doc_count = len(store.get_all_texts())
-    if config.paths.documents and Path(config.paths.documents).exists():
+    if str(config.paths.documents) and config.paths.documents.exists():
         docs = load_folder(
-            Path(config.paths.documents),
+            config.paths.documents,
             recursive=config.scanning.recursive,
         )
         if docs:
