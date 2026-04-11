@@ -71,10 +71,15 @@ class VectorStore:
         """Return the number of chunks in the collection."""
         return self._collection.count()
 
+    def get_all_texts_and_metadatas(self) -> tuple[list[str], list[dict]]:
+        """Return all stored chunk texts and their metadata."""
+        result = self._collection.get()
+        return result["documents"], result["metadatas"]
+
     def get_all_texts(self) -> list[str]:
         """Return all stored chunk texts."""
-        result = self._collection.get()
-        return result["documents"]
+        texts, _ = self.get_all_texts_and_metadatas()
+        return texts
 
     def has_document(self, doc_hash: str) -> bool:
         """Check if any chunk with the given doc_hash exists."""
