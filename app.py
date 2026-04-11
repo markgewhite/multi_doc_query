@@ -12,6 +12,7 @@ from src.ingestion.loader import load_folder
 from src.retrieval.bm25_index import BM25Index
 from src.retrieval.embeddings import make_ollama_embed_fn
 from src.retrieval.hybrid import HybridRetriever
+from src.retrieval.reranker import Reranker
 from src.retrieval.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
@@ -83,6 +84,10 @@ async def on_chat_start():
     )
     cl.user_session.set("retriever", retriever)
 
+    # Load cross-encoder reranker
+    reranker = Reranker(model_name=config.retrieval.reranker_model)
+    cl.user_session.set("reranker", reranker)
+
     if doc_count > 0:
         await cl.Message(
             content=f"{doc_count} chunks indexed. Ask me anything!"
@@ -109,7 +114,13 @@ async def on_message(message: cl.Message):
         ).send()
         return
 
-    results = retriever.retrieve(message.content)
+    candidates = retriever.retrieve(message.content)
+
+    # Rerank candidates with cross-encoder
+    reranker = cl.user_session.get("reranker")
+    results = reranker.rerank(
+        message.content, candidates, top_k=config.retrieval.rerank_top_k
+    )
 
     # Stream the answer token by token
     msg = cl.Message(content="")
