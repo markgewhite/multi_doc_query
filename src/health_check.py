@@ -39,7 +39,14 @@ async def check_models(
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.get(f"{base_url}/api/tags")
 
-    available = {model["name"] for model in response.json().get("models", [])}
+    available = set()
+    for model in response.json().get("models", []):
+        name = model["name"]
+        available.add(name)
+        # Also register without :latest so "mxbai-embed-large" matches
+        # "mxbai-embed-large:latest"
+        if name.endswith(":latest"):
+            available.add(name.removesuffix(":latest"))
 
     missing = [name for name in required if name not in available]
     if missing:

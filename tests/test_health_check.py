@@ -88,3 +88,18 @@ async def test_check_models_all_missing(mock_client_cls):
     assert result.ok is False
     assert "ollama pull llama3.1:8b" in result.message
     assert "ollama pull mxbai-embed-large" in result.message
+
+
+@patch("src.health_check.httpx.AsyncClient")
+async def test_check_models_matches_without_latest_tag(mock_client_cls):
+    """Requesting 'mxbai-embed-large' matches 'mxbai-embed-large:latest'."""
+    mock_client = AsyncMock()
+    mock_client.get.return_value = _mock_response(
+        200,
+        {"models": [{"name": "llama3.1:8b"}, {"name": "mxbai-embed-large:latest"}]},
+    )
+    mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+    result = await check_models(["llama3.1:8b", "mxbai-embed-large"])
+
+    assert result.ok is True

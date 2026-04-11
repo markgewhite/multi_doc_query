@@ -37,7 +37,7 @@ scanning:
     assert config.retrieval.bm25_top_k == 10
     assert config.retrieval.reranker_model == "test-reranker"
     assert config.paths.chroma_db == Path("/tmp/test_chroma")
-    assert config.paths.documents == "/tmp/docs"
+    assert config.paths.documents == Path("/tmp/docs")
     assert config.scanning.recursive is False
 
 

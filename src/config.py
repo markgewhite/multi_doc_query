@@ -28,9 +28,9 @@ class RetrievalConfig(BaseModel):
 
 class PathsConfig(BaseModel):
     chroma_db: Path = Path("~/.multi_doc_query/chroma_db/")
-    documents: str = ""
+    documents: Path = Path("")
 
-    @field_validator("chroma_db", mode="before")
+    @field_validator("chroma_db", "documents", mode="before")
     @classmethod
     def expand_home(cls, v: str | Path) -> Path:
         return Path(v).expanduser()
