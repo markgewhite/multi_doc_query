@@ -14,7 +14,7 @@ def make_ollama_embed_fn(model: str = "mxbai-embed-large") -> EmbedFn:
     def embed(texts: list[str]) -> list[list[float]]:
         # Embed one at a time to stay within the model's context window.
         # Truncate texts that exceed the model's token limit to avoid errors.
-        max_chars = 2000  # ~512 tokens, conservative estimate
+        max_chars = 1000  # ~250 tokens, well within mxbai-embed-large's 512 token limit
         embeddings = []
         for text in texts:
             truncated = text[:max_chars] if len(text) > max_chars else text
