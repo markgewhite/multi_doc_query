@@ -1,3 +1,6 @@
+import logging
+import time
+
 import chainlit as cl
 import chromadb
 
@@ -6,8 +9,12 @@ from src.generation.answerer import answer, build_source_elements
 from src.health_check import check_models, check_ollama
 from src.ingestion.chunker import chunk_documents
 from src.ingestion.loader import load_folder
+from src.retrieval.bm25_index import BM25Index
 from src.retrieval.embeddings import make_ollama_embed_fn
+from src.retrieval.hybrid import HybridRetriever
 from src.retrieval.vector_store import VectorStore
+
+logger = logging.getLogger(__name__)
 
 
 @cl.on_chat_start
@@ -58,10 +65,23 @@ async def on_chat_start():
             )
             store.add_chunks(chunks)
             doc_count = store.count()
-            await cl.Message(
-                content=f"Ingested {len(docs)} pages into {doc_count} chunks. Ask me anything!"
-            ).send()
-            return
+
+    # Build BM25 index from stored chunks
+    bm25_index = BM25Index()
+    if doc_count > 0:
+        start = time.time()
+        texts, metadatas = store.get_all_texts_and_metadatas()
+        bm25_index.build(texts, metadatas)
+        elapsed = time.time() - start
+        logger.info("BM25 index built from %d chunks in %.2fs", doc_count, elapsed)
+
+    # Create hybrid retriever
+    retriever = HybridRetriever(
+        vector_store=store,
+        bm25_index=bm25_index,
+        config=config.retrieval,
+    )
+    cl.user_session.set("retriever", retriever)
 
     if doc_count > 0:
         await cl.Message(
@@ -76,22 +96,20 @@ async def on_chat_start():
 @cl.on_message
 async def on_message(message: cl.Message):
     config = cl.user_session.get("config")
-    store = cl.user_session.get("store")
+    retriever = cl.user_session.get("retriever")
 
-    if store is None:
-        await cl.Message(content="No document store available. Please restart the app.").send()
+    if retriever is None:
+        await cl.Message(content="No retriever available. Please restart the app.").send()
         return
 
-    if store.count() == 0:
+    store = cl.user_session.get("store")
+    if store is None or store.count() == 0:
         await cl.Message(
             content="No documents indexed yet. Configure your documents folder in `config.yaml` first."
         ).send()
         return
 
-    results = store.search(
-        message.content,
-        k=config.retrieval.semantic_top_k,
-    )
+    results = retriever.retrieve(message.content)
 
     # Stream the answer token by token
     msg = cl.Message(content="")
