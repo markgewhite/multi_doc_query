@@ -22,10 +22,8 @@ def build_prompt(question: str, results: list[SearchResult]) -> list[dict]:
     """Build chat messages for Ollama from a question and search results."""
     context_parts = []
     for r in results:
-        filename = r.metadata.get("relative_path", r.metadata.get("filename", "unknown"))
-        page = r.metadata.get("page_number", "?")
         context_parts.append(
-            f"--- Source: {filename} | Page {page} ---\n{r.text}"
+            f"--- {_source_name(r.metadata)} ---\n{r.text}"
         )
 
     context = "\n\n".join(context_parts)
@@ -39,6 +37,29 @@ def build_prompt(question: str, results: list[SearchResult]) -> list[dict]:
                 f"Question: {question}"
             ),
         },
+    ]
+
+
+def _source_name(metadata: dict[str, str | int]) -> str:
+    """Build a display name for a source from its metadata."""
+    path = metadata.get("relative_path", metadata.get("filename", "unknown"))
+    page = metadata.get("page_number", "?")
+    return f"Source: {path} | Page {page}"
+
+
+def build_source_elements(results: list[SearchResult]) -> list[dict]:
+    """Build source element data for Chainlit display.
+
+    Returns a list of dicts with keys: name, content, display.
+    Order matches the input (relevance-ranked by caller).
+    """
+    return [
+        {
+            "name": _source_name(r.metadata),
+            "content": r.text,
+            "display": "side",
+        }
+        for r in results
     ]
 
 

@@ -1,4 +1,4 @@
-from src.generation.answerer import build_prompt
+from src.generation.answerer import build_prompt, build_source_elements
 from src.retrieval.vector_store import SearchResult
 
 
@@ -67,3 +67,46 @@ def test_build_prompt_falls_back_to_filename():
     messages = build_prompt("question", results)
     content = " ".join(m["content"] for m in messages)
     assert "--- Source: legacy.pdf | Page 1 ---" in content
+
+
+def test_build_source_elements_returns_list():
+    """build_source_elements returns a list of dicts with name, content, display."""
+    elements = build_source_elements(_make_results())
+    assert len(elements) == 2
+    for el in elements:
+        assert "name" in el
+        assert "content" in el
+        assert "display" in el
+
+
+def test_build_source_elements_name_format():
+    """Element name follows 'Source: path | Page N' format."""
+    results = [
+        SearchResult(
+            text="Some text.",
+            metadata={"filename": "report.pdf", "relative_path": "reports/annual.pdf", "doc_type": "pdf", "page_number": 5},
+            distance=0.1,
+        ),
+    ]
+    elements = build_source_elements(results)
+    assert elements[0]["name"] == "Source: reports/annual.pdf | Page 5"
+
+
+def test_build_source_elements_preserves_order():
+    """Elements maintain the same order as input results (relevance-ranked)."""
+    elements = build_source_elements(_make_results())
+    assert "Paris" in elements[0]["content"]
+    assert "Berlin" in elements[1]["content"]
+
+
+def test_build_source_elements_falls_back_to_filename():
+    """Without relative_path, element name uses filename."""
+    results = [
+        SearchResult(
+            text="Some text.",
+            metadata={"filename": "old.pdf", "doc_type": "pdf", "page_number": 1},
+            distance=0.1,
+        ),
+    ]
+    elements = build_source_elements(results)
+    assert elements[0]["name"] == "Source: old.pdf | Page 1"
