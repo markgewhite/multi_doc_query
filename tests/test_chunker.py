@@ -67,3 +67,38 @@ def test_chunk_has_doc_hash():
     assert "doc_hash" in chunks[0].metadata
     assert isinstance(chunks[0].metadata["doc_hash"], str)
     assert len(chunks[0].metadata["doc_hash"]) == 32  # MD5 hex length
+
+
+def test_chunk_markdown_has_section_header():
+    """Markdown documents produce chunks with section_header metadata."""
+    md_text = "# Introduction\n\nThis is the intro.\n\n## Methods\n\nThese are the methods."
+    doc = Document(
+        text=md_text,
+        metadata={"filename": "README.md", "doc_type": "md", "page_number": 1},
+    )
+    chunks = chunk_documents([doc], chunk_size=512, chunk_overlap=0)
+    headers = [c.metadata.get("section_header") for c in chunks]
+    assert any(h and "Introduction" in h for h in headers)
+    assert any(h and "Methods" in h for h in headers)
+
+
+def test_chunk_markdown_nested_headers():
+    """Nested Markdown headers produce 'H1 > H2' format in section_header."""
+    md_text = "# Guide\n\n## Setup\n\n### Prerequisites\n\nYou need Python."
+    doc = Document(
+        text=md_text,
+        metadata={"filename": "guide.md", "doc_type": "md", "page_number": 1},
+    )
+    chunks = chunk_documents([doc], chunk_size=512, chunk_overlap=0)
+    headers = [c.metadata.get("section_header", "") for c in chunks]
+    assert any("Guide" in h and "Setup" in h and "Prerequisites" in h for h in headers)
+
+
+def test_chunk_non_markdown_no_section_header():
+    """Non-Markdown documents don't get section_header metadata."""
+    doc = Document(
+        text="Some plain text content.",
+        metadata={"filename": "notes.txt", "doc_type": "txt", "page_number": 1},
+    )
+    chunks = chunk_documents([doc], chunk_size=512, chunk_overlap=0)
+    assert "section_header" not in chunks[0].metadata
