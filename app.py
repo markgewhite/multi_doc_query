@@ -2,7 +2,7 @@ import chainlit as cl
 import chromadb
 
 from src.config import ConfigError, load_config
-from src.generation.answerer import answer
+from src.generation.answerer import answer, build_source_elements
 from src.health_check import check_models, check_ollama
 from src.ingestion.chunker import chunk_documents
 from src.ingestion.loader import load_folder
@@ -43,9 +43,9 @@ async def on_chat_start():
     store = VectorStore(embed_fn=embed_fn, client=chroma_client)
     cl.user_session.set("store", store)
 
-    # Ingest documents if a folder is configured
-    doc_count = len(store.get_all_texts())
-    if str(config.paths.documents) and config.paths.documents.exists():
+    # Ingest documents if a folder is configured and store is empty
+    doc_count = store.count()
+    if doc_count == 0 and str(config.paths.documents) and config.paths.documents.exists():
         docs = load_folder(
             config.paths.documents,
             recursive=config.scanning.recursive,
@@ -57,7 +57,7 @@ async def on_chat_start():
                 chunk_overlap=config.chunking.chunk_overlap,
             )
             store.add_chunks(chunks)
-            doc_count = len(store.get_all_texts())
+            doc_count = store.count()
             await cl.Message(
                 content=f"Ingested {len(docs)} pages into {doc_count} chunks. Ask me anything!"
             ).send()
@@ -82,7 +82,7 @@ async def on_message(message: cl.Message):
         await cl.Message(content="No document store available. Please restart the app.").send()
         return
 
-    if len(store.get_all_texts()) == 0:
+    if store.count() == 0:
         await cl.Message(
             content="No documents indexed yet. Configure your documents folder in `config.yaml` first."
         ).send()
@@ -102,3 +102,12 @@ async def on_message(message: cl.Message):
     ):
         await msg.stream_token(token)
     await msg.send()
+
+    # Attach expandable source chunks below the answer
+    for el_data in build_source_elements(results):
+        element = cl.Text(
+            name=el_data["name"],
+            content=el_data["content"],
+            display=el_data["display"],
+        )
+        await element.send(for_id=msg.id)

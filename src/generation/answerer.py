@@ -9,12 +9,14 @@ from src.retrieval.vector_store import SearchResult
 
 SYSTEM_PROMPT = (
     "You are a helpful assistant that answers questions based on the provided "
-    "document excerpts. Follow these rules:\n"
-    "1. Base your answer only on the provided excerpts.\n"
-    "2. Cite sources inline using [filename, p. N] format.\n"
-    "3. If excerpts from different documents conflict, highlight the "
+    "document sources. Follow these rules:\n"
+    "1. Base your answer only on the provided sources.\n"
+    "2. Cite sources inline using the exact source label shown in the "
+    "headers, e.g. [filename.pdf, p. 12]. Always use the filename from "
+    "the source header, never invent labels like 'Excerpt 1'.\n"
+    "3. If sources from different documents conflict, highlight the "
     "discrepancy and cite both sources.\n"
-    "4. If no excerpts are relevant to the question, say so clearly."
+    "4. If no sources are relevant to the question, say so clearly."
 )
 
 
@@ -22,10 +24,8 @@ def build_prompt(question: str, results: list[SearchResult]) -> list[dict]:
     """Build chat messages for Ollama from a question and search results."""
     context_parts = []
     for r in results:
-        filename = r.metadata.get("filename", "unknown")
-        page = r.metadata.get("page_number", "?")
         context_parts.append(
-            f"--- Source: {filename} | Page {page} ---\n{r.text}"
+            f"--- {_source_name(r.metadata)} ---\n{r.text}"
         )
 
     context = "\n\n".join(context_parts)
@@ -39,6 +39,29 @@ def build_prompt(question: str, results: list[SearchResult]) -> list[dict]:
                 f"Question: {question}"
             ),
         },
+    ]
+
+
+def _source_name(metadata: dict[str, str | int]) -> str:
+    """Build a display name for a source from its metadata."""
+    path = metadata.get("relative_path", metadata.get("filename", "unknown"))
+    page = metadata.get("page_number", "?")
+    return f"Source: {path} | Page {page}"
+
+
+def build_source_elements(results: list[SearchResult]) -> list[dict]:
+    """Build source element data for Chainlit display.
+
+    Returns a list of dicts with keys: name, content, display.
+    Order matches the input (relevance-ranked by caller).
+    """
+    return [
+        {
+            "name": _source_name(r.metadata),
+            "content": r.text,
+            "display": "side",
+        }
+        for r in results
     ]
 
 

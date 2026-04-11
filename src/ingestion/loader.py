@@ -31,6 +31,7 @@ def load_folder(path: Path, *, recursive: bool = True) -> list[Document]:
                     text=page.page_content,
                     metadata={
                         "filename": pdf_path.name,
+                        "relative_path": str(pdf_path.relative_to(path)),
                         "doc_type": "pdf",
                         "page_number": page.metadata.get("page", 0) + 1,
                     },
