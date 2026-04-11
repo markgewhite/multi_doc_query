@@ -45,6 +45,9 @@ def build_prompt(question: str, results: list[SearchResult]) -> list[dict]:
 def _source_name(metadata: dict[str, str | int]) -> str:
     """Build a display name for a source from its metadata."""
     path = metadata.get("relative_path", metadata.get("filename", "unknown"))
+    section = metadata.get("section_header")
+    if section:
+        return f"Source: {path} | Section: {section}"
     page = metadata.get("page_number", "?")
     return f"Source: {path} | Page {page}"
 

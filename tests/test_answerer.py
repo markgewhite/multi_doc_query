@@ -110,3 +110,40 @@ def test_build_source_elements_falls_back_to_filename():
     ]
     elements = build_source_elements(results)
     assert elements[0]["name"] == "Source: old.pdf | Page 1"
+
+
+def test_source_name_with_section_header():
+    """Markdown sources show section header instead of page number."""
+    results = [
+        SearchResult(
+            text="Install instructions.",
+            metadata={
+                "filename": "README.md",
+                "relative_path": "README.md",
+                "doc_type": "md",
+                "page_number": 1,
+                "section_header": "Getting Started > Installation",
+            },
+            distance=0.1,
+        ),
+    ]
+    messages = build_prompt("How to install?", results)
+    content = " ".join(m["content"] for m in messages)
+    assert "--- Source: README.md | Section: Getting Started > Installation ---" in content
+
+    elements = build_source_elements(results)
+    assert elements[0]["name"] == "Source: README.md | Section: Getting Started > Installation"
+
+
+def test_source_name_without_section_header():
+    """Non-Markdown sources still show page number (unchanged behaviour)."""
+    results = [
+        SearchResult(
+            text="Some text.",
+            metadata={"filename": "report.pdf", "doc_type": "pdf", "page_number": 7},
+            distance=0.1,
+        ),
+    ]
+    messages = build_prompt("question", results)
+    content = " ".join(m["content"] for m in messages)
+    assert "--- Source: report.pdf | Page 7 ---" in content
