@@ -8,8 +8,7 @@ from src.config import ConfigError, load_config
 from src.generation.answerer import answer, build_source_elements
 from src.generation.condenser import Condenser
 from src.health_check import check_models, check_ollama
-from src.ingestion.chunker import chunk_documents
-from src.ingestion.loader import load_folder
+from src.ingestion.ingest import ingest_folder
 from src.retrieval.bm25_index import BM25Index
 from src.retrieval.embeddings import make_ollama_embed_fn
 from src.retrieval.hybrid import HybridRetriever
@@ -17,6 +16,43 @@ from src.retrieval.reranker import Reranker
 from src.retrieval.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
+
+
+def _build_retriever(store: VectorStore, config) -> HybridRetriever:
+    """Build BM25 index and hybrid retriever from current store contents."""
+    bm25_index = BM25Index()
+    doc_count = store.count()
+    if doc_count > 0:
+        start = time.time()
+        texts, metadatas = store.get_all_texts_and_metadatas()
+        bm25_index.build(texts, metadatas)
+        elapsed = time.time() - start
+        logger.info("BM25 index built from %d chunks in %.2fs", doc_count, elapsed)
+
+    return HybridRetriever(
+        vector_store=store,
+        bm25_index=bm25_index,
+        config=config.retrieval,
+    )
+
+
+async def _run_ingestion(store: VectorStore, config) -> int:
+    """Ingest documents from configured folder. Returns chunk count."""
+    folder = config.paths.documents
+    if str(folder) and folder.exists():
+        ingested, skipped = ingest_folder(
+            folder,
+            store,
+            recursive=config.scanning.recursive,
+            chunk_size=config.chunking.chunk_size,
+            chunk_overlap=config.chunking.chunk_overlap,
+        )
+        if ingested > 0:
+            logger.info("Ingested %d new files, skipped %d unchanged", ingested, skipped)
+        elif skipped > 0:
+            logger.info("All %d files unchanged, skipped", skipped)
+
+    return store.count()
 
 
 @cl.on_chat_start
@@ -52,37 +88,11 @@ async def on_chat_start():
     store = VectorStore(embed_fn=embed_fn, client=chroma_client)
     cl.user_session.set("store", store)
 
-    # Ingest documents if a folder is configured and store is empty
-    doc_count = store.count()
-    if doc_count == 0 and str(config.paths.documents) and config.paths.documents.exists():
-        docs = load_folder(
-            config.paths.documents,
-            recursive=config.scanning.recursive,
-        )
-        if docs:
-            chunks = chunk_documents(
-                docs,
-                chunk_size=config.chunking.chunk_size,
-                chunk_overlap=config.chunking.chunk_overlap,
-            )
-            store.add_chunks(chunks)
-            doc_count = store.count()
+    # Auto-scan and ingest new/changed documents on startup
+    doc_count = await _run_ingestion(store, config)
 
-    # Build BM25 index from stored chunks
-    bm25_index = BM25Index()
-    if doc_count > 0:
-        start = time.time()
-        texts, metadatas = store.get_all_texts_and_metadatas()
-        bm25_index.build(texts, metadatas)
-        elapsed = time.time() - start
-        logger.info("BM25 index built from %d chunks in %.2fs", doc_count, elapsed)
-
-    # Create hybrid retriever
-    retriever = HybridRetriever(
-        vector_store=store,
-        bm25_index=bm25_index,
-        config=config.retrieval,
-    )
+    # Build retriever
+    retriever = _build_retriever(store, config)
     cl.user_session.set("retriever", retriever)
 
     # Load cross-encoder reranker
@@ -94,14 +104,64 @@ async def on_chat_start():
     cl.user_session.set("condenser", condenser)
     cl.user_session.set("chat_history", [])
 
+    # Set up Chainlit settings panel
+    settings = await cl.ChatSettings(
+        [
+            cl.input_widget.TextInput(
+                id="documents_folder",
+                label="Documents Folder",
+                initial=str(config.paths.documents),
+            ),
+            cl.input_widget.Switch(
+                id="recursive_scan",
+                label="Recursive Scanning",
+                initial=config.scanning.recursive,
+            ),
+        ]
+    ).send()
+
     if doc_count > 0:
         await cl.Message(
             content=f"{doc_count} chunks indexed. Ask me anything!"
         ).send()
     else:
         await cl.Message(
-            content="No documents indexed. Configure your documents folder in `config.yaml` to get started."
+            content="No documents indexed. Configure your documents folder in the settings panel (gear icon) or `config.yaml`."
         ).send()
+
+
+@cl.on_settings_update
+async def on_settings_update(settings: dict):
+    """Re-scan and ingest when settings change."""
+    from pathlib import Path
+
+    config = cl.user_session.get("config")
+    store = cl.user_session.get("store")
+
+    folder = Path(settings["documents_folder"]).expanduser()
+    recursive = settings["recursive_scan"]
+
+    if not folder.exists():
+        await cl.Message(
+            content=f"Folder not found: `{folder}`"
+        ).send()
+        return
+
+    # Update config in session
+    config.paths.documents = folder
+    config.scanning.recursive = recursive
+
+    await cl.Message(content=f"Scanning `{folder}`...").send()
+
+    doc_count = await _run_ingestion(store, config)
+
+    # Rebuild retriever with updated store
+    retriever = _build_retriever(store, config)
+    cl.user_session.set("retriever", retriever)
+
+    await cl.Message(
+        content=f"Done. {doc_count} chunks indexed."
+    ).send()
 
 
 @cl.on_message
@@ -116,7 +176,7 @@ async def on_message(message: cl.Message):
     store = cl.user_session.get("store")
     if store is None or store.count() == 0:
         await cl.Message(
-            content="No documents indexed yet. Configure your documents folder in `config.yaml` first."
+            content="No documents indexed yet. Configure your documents folder in the settings panel (gear icon) or `config.yaml`."
         ).send()
         return
 

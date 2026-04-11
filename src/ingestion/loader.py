@@ -19,6 +19,25 @@ EXTENSION_TO_DOC_TYPE = {
 }
 
 
+def load_file(file_path: Path, root: Path) -> list[Document]:
+    """Load a single supported document file.
+
+    Args:
+        file_path: Path to the file.
+        root: Root folder for computing relative paths.
+
+    Returns:
+        List of Documents (one per page for PDFs, one for other formats).
+    """
+    doc_type = EXTENSION_TO_DOC_TYPE.get(file_path.suffix.lower())
+    if doc_type is None:
+        return []
+
+    if doc_type == "pdf":
+        return _load_pdf(file_path, root)
+    return _load_single_file(file_path, root, doc_type)
+
+
 def load_folder(path: Path, *, recursive: bool = True) -> list[Document]:
     """Load all supported documents from a folder."""
     path = Path(path)
