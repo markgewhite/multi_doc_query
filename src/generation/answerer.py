@@ -22,7 +22,7 @@ def build_prompt(question: str, results: list[SearchResult]) -> list[dict]:
     """Build chat messages for Ollama from a question and search results."""
     context_parts = []
     for r in results:
-        filename = r.metadata.get("filename", "unknown")
+        filename = r.metadata.get("relative_path", r.metadata.get("filename", "unknown"))
         page = r.metadata.get("page_number", "?")
         context_parts.append(
             f"--- Source: {filename} | Page {page} ---\n{r.text}"
