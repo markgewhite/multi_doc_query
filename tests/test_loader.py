@@ -46,6 +46,26 @@ def test_load_folder_empty_dir(tmp_path):
     assert docs == []
 
 
+def test_document_metadata_relative_path():
+    """Documents at the root have relative_path equal to filename."""
+    docs = load_folder(FIXTURES)
+    for doc in docs:
+        assert doc.metadata["relative_path"] == "sample.pdf"
+
+
+def test_document_metadata_relative_path_nested(tmp_path):
+    """Documents in subdirectories have relative_path including the subdir."""
+    import shutil
+
+    sub = tmp_path / "reports"
+    sub.mkdir()
+    shutil.copy(FIXTURES / "sample.pdf", sub / "annual.pdf")
+
+    docs = load_folder(tmp_path)
+    paths = {doc.metadata["relative_path"] for doc in docs}
+    assert "reports/annual.pdf" in paths
+
+
 def test_load_folder_recursive(tmp_path):
     """With recursive=True, finds PDFs in subdirectories."""
     import shutil
