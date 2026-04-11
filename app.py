@@ -36,21 +36,25 @@ def _build_retriever(store: VectorStore, config) -> HybridRetriever:
     )
 
 
-async def _run_ingestion(store: VectorStore, config) -> int:
+async def _run_ingestion(store: VectorStore, config, **kwargs) -> int:
     """Ingest documents from configured folder. Returns chunk count."""
     folder = config.paths.documents
     if str(folder) and folder.exists():
-        ingested, skipped = ingest_folder(
+        result = ingest_folder(
             folder,
             store,
             recursive=config.scanning.recursive,
             chunk_size=config.chunking.chunk_size,
             chunk_overlap=config.chunking.chunk_overlap,
+            **kwargs,
         )
-        if ingested > 0:
-            logger.info("Ingested %d new files, skipped %d unchanged", ingested, skipped)
-        elif skipped > 0:
-            logger.info("All %d files unchanged, skipped", skipped)
+        if result.ingested > 0:
+            logger.info(
+                "Ingested %d new files, skipped %d, failed %d",
+                result.ingested, result.skipped, result.failed,
+            )
+        elif result.skipped > 0:
+            logger.info("All %d files unchanged, skipped", result.skipped)
 
     return store.count()
 
