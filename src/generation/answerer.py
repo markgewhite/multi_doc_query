@@ -9,12 +9,14 @@ from src.retrieval.vector_store import SearchResult
 
 SYSTEM_PROMPT = (
     "You are a helpful assistant that answers questions based on the provided "
-    "document excerpts. Follow these rules:\n"
-    "1. Base your answer only on the provided excerpts.\n"
-    "2. Cite sources inline using [filename, p. N] format.\n"
-    "3. If excerpts from different documents conflict, highlight the "
+    "document sources. Follow these rules:\n"
+    "1. Base your answer only on the provided sources.\n"
+    "2. Cite sources inline using the exact source label shown in the "
+    "headers, e.g. [filename.pdf, p. 12]. Always use the filename from "
+    "the source header, never invent labels like 'Excerpt 1'.\n"
+    "3. If sources from different documents conflict, highlight the "
     "discrepancy and cite both sources.\n"
-    "4. If no excerpts are relevant to the question, say so clearly."
+    "4. If no sources are relevant to the question, say so clearly."
 )
 
 
