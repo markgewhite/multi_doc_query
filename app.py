@@ -137,7 +137,7 @@ async def on_chat_start():
 
     if doc_count > 0:
         await cl.Message(
-            content=f"{doc_count} chunks indexed. Ask me anything!",
+            content=f"**Ready** \u2014 {doc_count} chunks indexed. Ask me anything!",
             actions=actions,
         ).send()
     else:
@@ -204,7 +204,7 @@ async def on_reingest(action: cl.Action):
     summary = _build_ingest_summary(result, total_files)
     doc_count = store.count()
     await cl.Message(
-        content=f"{summary}\n\n{doc_count} chunks indexed."
+        content=f"{summary}\n\n**Ready** \u2014 {doc_count} chunks indexed."
     ).send()
 
 
@@ -238,7 +238,7 @@ async def on_settings_update(settings: dict):
     cl.user_session.set("retriever", retriever)
 
     await cl.Message(
-        content=f"Done. {doc_count} chunks indexed."
+        content=f"**Ready** \u2014 {doc_count} chunks indexed."
     ).send()
 
 
@@ -263,13 +263,22 @@ async def on_message(message: cl.Message):
     chat_history = cl.user_session.get("chat_history")
     query = condenser.condense(message.content, chat_history)
 
-    candidates = retriever.retrieve(query)
+    # Retrieval pipeline with collapsible step display
+    async with cl.Step(name="Retrieval", type="tool") as retrieval_step:
+        # Step 1: Hybrid search
+        async with cl.Step(name="Searching", type="tool") as search_step:
+            candidates = retriever.retrieve(query)
+            search_step.output = f"Found {len(candidates)} candidates via hybrid search (BM25 + semantic)"
 
-    # Rerank candidates with cross-encoder
-    reranker = cl.user_session.get("reranker")
-    results = reranker.rerank(
-        query, candidates, top_k=config.retrieval.rerank_top_k
-    )
+        # Step 2: Reranking
+        async with cl.Step(name="Reranking", type="tool") as rerank_step:
+            reranker = cl.user_session.get("reranker")
+            results = reranker.rerank(
+                query, candidates, top_k=config.retrieval.rerank_top_k
+            )
+            rerank_step.output = f"Reranked to top {len(results)} by cross-encoder relevance"
+
+        retrieval_step.output = f"Retrieved {len(results)} relevant chunks"
 
     # Stream the answer token by token
     msg = cl.Message(content="")
