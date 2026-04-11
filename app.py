@@ -8,7 +8,8 @@ from src.config import ConfigError, load_config
 from src.generation.answerer import answer, build_source_elements
 from src.generation.condenser import Condenser
 from src.health_check import check_models, check_ollama
-from src.ingestion.ingest import ingest_folder
+from src.ingestion.ingest import IngestResult, ingest_folder
+from src.ingestion.scanner import scan_folder
 from src.retrieval.bm25_index import BM25Index
 from src.retrieval.embeddings import make_ollama_embed_fn
 from src.retrieval.hybrid import HybridRetriever
@@ -124,14 +125,87 @@ async def on_chat_start():
         ]
     ).send()
 
+    # Add re-ingest action button
+    actions = [
+        cl.Action(
+            name="reingest",
+            payload={"value": "reingest"},
+            label="Re-ingest Documents",
+            description="Force re-ingest all documents from the configured folder",
+        )
+    ]
+
     if doc_count > 0:
         await cl.Message(
-            content=f"{doc_count} chunks indexed. Ask me anything!"
+            content=f"{doc_count} chunks indexed. Ask me anything!",
+            actions=actions,
         ).send()
     else:
         await cl.Message(
-            content="No documents indexed. Configure your documents folder in the settings panel (gear icon) or `config.yaml`."
+            content="No documents indexed. Configure your documents folder in the settings panel (gear icon) or `config.yaml`.",
+            actions=actions,
         ).send()
+
+
+def _build_ingest_summary(result: IngestResult, total_files: int) -> str:
+    """Build a human-readable ingestion summary."""
+    parts = [f"**Ingestion complete.** {result.ingested}/{total_files} documents ingested."]
+
+    if result.skipped > 0:
+        parts.append(f"{result.skipped} unchanged (skipped).")
+
+    if result.failed > 0:
+        parts.append(f"{result.failed} failed.")
+        parts.append("\n<details><summary>Failed documents</summary>\n")
+        for filename, error in result.failures:
+            parts.append(f"- **{filename}**: {error}")
+        parts.append("\n</details>")
+
+    return " ".join(parts)
+
+
+@cl.action_callback("reingest")
+async def on_reingest(action: cl.Action):
+    """Handle manual re-ingest action button."""
+    config = cl.user_session.get("config")
+    store = cl.user_session.get("store")
+    folder = config.paths.documents
+
+    if not str(folder) or not folder.exists():
+        await cl.Message(
+            content="No documents folder configured. Set it in the settings panel first."
+        ).send()
+        return
+
+    # Show document count before starting
+    files = scan_folder(folder, recursive=config.scanning.recursive)
+    total_files = len(files)
+    await cl.Message(
+        content=f"Re-ingesting {total_files} documents from `{folder}`..."
+    ).send()
+
+    # Run ingestion with force=True and per-file progress steps
+    async with cl.Step(name="Re-ingestion Progress", type="tool") as step:
+        result = ingest_folder(
+            folder,
+            store,
+            recursive=config.scanning.recursive,
+            chunk_size=config.chunking.chunk_size,
+            chunk_overlap=config.chunking.chunk_overlap,
+            force=True,
+            on_progress=lambda name, status: logger.info("  %s: %s", name, status),
+        )
+        step.output = _build_ingest_summary(result, total_files)
+
+    # Rebuild retriever with updated store
+    retriever = _build_retriever(store, config)
+    cl.user_session.set("retriever", retriever)
+
+    summary = _build_ingest_summary(result, total_files)
+    doc_count = store.count()
+    await cl.Message(
+        content=f"{summary}\n\n{doc_count} chunks indexed."
+    ).send()
 
 
 @cl.on_settings_update
