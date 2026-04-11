@@ -6,6 +6,7 @@ import chromadb
 
 from src.config import ConfigError, load_config
 from src.generation.answerer import answer, build_source_elements
+from src.generation.condenser import Condenser
 from src.health_check import check_models, check_ollama
 from src.ingestion.chunker import chunk_documents
 from src.ingestion.loader import load_folder
@@ -88,6 +89,11 @@ async def on_chat_start():
     reranker = Reranker(model_name=config.retrieval.reranker_model)
     cl.user_session.set("reranker", reranker)
 
+    # Create condenser for follow-up questions and init chat history
+    condenser = Condenser(model=config.models.llm)
+    cl.user_session.set("condenser", condenser)
+    cl.user_session.set("chat_history", [])
+
     if doc_count > 0:
         await cl.Message(
             content=f"{doc_count} chunks indexed. Ask me anything!"
@@ -114,18 +120,23 @@ async def on_message(message: cl.Message):
         ).send()
         return
 
-    candidates = retriever.retrieve(message.content)
+    # Condense follow-up questions into standalone queries
+    condenser = cl.user_session.get("condenser")
+    chat_history = cl.user_session.get("chat_history")
+    query = condenser.condense(message.content, chat_history)
+
+    candidates = retriever.retrieve(query)
 
     # Rerank candidates with cross-encoder
     reranker = cl.user_session.get("reranker")
     results = reranker.rerank(
-        message.content, candidates, top_k=config.retrieval.rerank_top_k
+        query, candidates, top_k=config.retrieval.rerank_top_k
     )
 
     # Stream the answer token by token
     msg = cl.Message(content="")
     async for token in answer(
-        message.content,
+        query,
         results,
         model=config.models.llm,
     ):
@@ -140,3 +151,7 @@ async def on_message(message: cl.Message):
             display=el_data["display"],
         )
         await element.send(for_id=msg.id)
+
+    # Update chat history (kept separate from answer context window)
+    chat_history.append({"role": "user", "content": message.content})
+    chat_history.append({"role": "assistant", "content": msg.content})
