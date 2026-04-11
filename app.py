@@ -43,9 +43,9 @@ async def on_chat_start():
     store = VectorStore(embed_fn=embed_fn, client=chroma_client)
     cl.user_session.set("store", store)
 
-    # Ingest documents if a folder is configured
+    # Ingest documents if a folder is configured and store is empty
     doc_count = store.count()
-    if str(config.paths.documents) and config.paths.documents.exists():
+    if doc_count == 0 and str(config.paths.documents) and config.paths.documents.exists():
         docs = load_folder(
             config.paths.documents,
             recursive=config.scanning.recursive,
