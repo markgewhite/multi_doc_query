@@ -44,7 +44,7 @@ async def on_chat_start():
     cl.user_session.set("store", store)
 
     # Ingest documents if a folder is configured
-    doc_count = len(store.get_all_texts())
+    doc_count = store.count()
     if str(config.paths.documents) and config.paths.documents.exists():
         docs = load_folder(
             config.paths.documents,
@@ -57,7 +57,7 @@ async def on_chat_start():
                 chunk_overlap=config.chunking.chunk_overlap,
             )
             store.add_chunks(chunks)
-            doc_count = len(store.get_all_texts())
+            doc_count = store.count()
             await cl.Message(
                 content=f"Ingested {len(docs)} pages into {doc_count} chunks. Ask me anything!"
             ).send()
@@ -82,7 +82,7 @@ async def on_message(message: cl.Message):
         await cl.Message(content="No document store available. Please restart the app.").send()
         return
 
-    if len(store.get_all_texts()) == 0:
+    if store.count() == 0:
         await cl.Message(
             content="No documents indexed yet. Configure your documents folder in `config.yaml` first."
         ).send()

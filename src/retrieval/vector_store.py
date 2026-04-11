@@ -67,6 +67,10 @@ class VectorStore:
             )
         return search_results
 
+    def count(self) -> int:
+        """Return the number of chunks in the collection."""
+        return self._collection.count()
+
     def get_all_texts(self) -> list[str]:
         """Return all stored chunk texts."""
         result = self._collection.get()
