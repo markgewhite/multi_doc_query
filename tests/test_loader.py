@@ -26,10 +26,10 @@ def test_document_metadata_filename():
 
 
 def test_document_metadata_doc_type():
-    """Each Document has doc_type='pdf' in metadata."""
+    """Each Document has a valid doc_type in metadata."""
     docs = load_folder(FIXTURES)
     for doc in docs:
-        assert doc.metadata["doc_type"] == "pdf"
+        assert doc.metadata["doc_type"] in ("pdf", "docx", "txt", "md")
 
 
 def test_document_metadata_page_number():
@@ -49,7 +49,8 @@ def test_load_folder_empty_dir(tmp_path):
 def test_document_metadata_relative_path():
     """Documents at the root have relative_path equal to filename."""
     docs = load_folder(FIXTURES)
-    for doc in docs:
+    pdf_docs = [d for d in docs if d.metadata["doc_type"] == "pdf"]
+    for doc in pdf_docs:
         assert doc.metadata["relative_path"] == "sample.pdf"
 
 
@@ -89,3 +90,56 @@ def test_load_folder_non_recursive(tmp_path):
 
     docs = load_folder(tmp_path, recursive=False)
     assert docs == []
+
+
+def test_load_docx_returns_documents():
+    """Loading a folder with a DOCX returns Documents with text."""
+    docs = load_folder(FIXTURES)
+    docx_docs = [d for d in docs if d.metadata["doc_type"] == "docx"]
+    assert len(docx_docs) > 0
+    assert docx_docs[0].text.strip()
+
+
+def test_docx_metadata_doc_type():
+    """DOCX documents have doc_type='docx'."""
+    docs = load_folder(FIXTURES)
+    docx_docs = [d for d in docs if d.metadata["filename"] == "sample.docx"]
+    assert len(docx_docs) > 0
+    assert docx_docs[0].metadata["doc_type"] == "docx"
+
+
+def test_docx_metadata_relative_path():
+    """DOCX documents have correct relative_path."""
+    docs = load_folder(FIXTURES)
+    docx_docs = [d for d in docs if d.metadata["filename"] == "sample.docx"]
+    assert docx_docs[0].metadata["relative_path"] == "sample.docx"
+
+
+def test_load_txt_returns_documents():
+    """Loading a folder with a TXT file returns Documents with doc_type='txt'."""
+    docs = load_folder(FIXTURES)
+    txt_docs = [d for d in docs if d.metadata["filename"] == "sample.txt"]
+    assert len(txt_docs) > 0
+    assert txt_docs[0].metadata["doc_type"] == "txt"
+    assert txt_docs[0].text.strip()
+
+
+def test_load_md_returns_documents():
+    """Loading a folder with an MD file returns Documents with doc_type='md'."""
+    docs = load_folder(FIXTURES)
+    md_docs = [d for d in docs if d.metadata["filename"] == "sample.md"]
+    assert len(md_docs) > 0
+    assert md_docs[0].metadata["doc_type"] == "md"
+    assert md_docs[0].text.strip()
+
+
+def test_load_mixed_formats(tmp_path):
+    """A folder with PDF, DOCX, TXT, and MD loads all formats."""
+    import shutil
+
+    for name in ("sample.pdf", "sample.docx", "sample.txt", "sample.md"):
+        shutil.copy(FIXTURES / name, tmp_path / name)
+
+    docs = load_folder(tmp_path)
+    doc_types = {d.metadata["doc_type"] for d in docs}
+    assert doc_types == {"pdf", "docx", "txt", "md"}
