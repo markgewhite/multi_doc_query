@@ -1,4 +1,9 @@
-from src.generation.answerer import build_prompt, build_source_elements
+from src.generation.answerer import (
+    build_prompt,
+    build_ref_map,
+    build_reference_list,
+    build_source_elements,
+)
 from src.models import SearchResult
 
 
@@ -215,3 +220,104 @@ def test_build_source_elements_section_header():
     ]
     elements = build_source_elements(results)
     assert elements[0]["name"] == "[1] README.md, Section: Getting Started > Installation"
+
+
+# --- build_ref_map tests ---
+
+
+def test_build_ref_map_assigns_numbers():
+    """build_ref_map assigns 1-based numbers to unique documents."""
+    ref_map = build_ref_map(_make_results())
+    assert ref_map == {"countries/geo.pdf": 1, "countries/europe.pdf": 2}
+
+
+def test_build_ref_map_deduplicates():
+    """Same document gets the same number regardless of how many chunks."""
+    ref_map = build_ref_map(_make_results_same_doc())
+    assert ref_map == {"reports/annual.pdf": 1, "countries/europe.pdf": 2}
+
+
+def test_build_ref_map_extends_existing():
+    """Passing an existing ref_map preserves those numbers and continues."""
+    existing = {"countries/geo.pdf": 1}
+    ref_map = build_ref_map(_make_results(), existing)
+    # geo.pdf keeps number 1, europe.pdf gets 2
+    assert ref_map["countries/geo.pdf"] == 1
+    assert ref_map["countries/europe.pdf"] == 2
+
+
+def test_build_ref_map_extends_with_new_docs():
+    """New docs in second query get numbers after the existing max."""
+    existing = {"old_doc.pdf": 1, "another.pdf": 2}
+    results = [
+        SearchResult(
+            text="New content.",
+            metadata={"filename": "new.pdf", "relative_path": "new.pdf", "doc_type": "pdf", "page_number": 1},
+            distance=0.1,
+        ),
+    ]
+    ref_map = build_ref_map(results, existing)
+    assert ref_map["old_doc.pdf"] == 1
+    assert ref_map["another.pdf"] == 2
+    assert ref_map["new.pdf"] == 3
+
+
+def test_build_ref_map_no_mutation():
+    """build_ref_map does not mutate the existing dict passed in."""
+    existing = {"countries/geo.pdf": 1}
+    original = existing.copy()
+    build_ref_map(_make_results(), existing)
+    assert existing == original
+
+
+# --- build_reference_list tests ---
+
+
+def test_build_reference_list_format():
+    """build_reference_list returns a formatted reference list string."""
+    ref_map = {"countries/geo.pdf": 1, "countries/europe.pdf": 2}
+    text = build_reference_list(ref_map)
+    assert "[1] countries/geo.pdf" in text
+    assert "[2] countries/europe.pdf" in text
+
+
+def test_build_reference_list_sorted_by_number():
+    """References are listed in numeric order."""
+    ref_map = {"b.pdf": 2, "a.pdf": 1, "c.pdf": 3}
+    text = build_reference_list(ref_map)
+    lines = text.strip().split("\n")
+    assert lines[0] == "[1] a.pdf"
+    assert lines[1] == "[2] b.pdf"
+    assert lines[2] == "[3] c.pdf"
+
+
+def test_build_reference_list_only_for_given_numbers():
+    """When filtering to specific numbers, only those appear."""
+    ref_map = {"a.pdf": 1, "b.pdf": 2, "c.pdf": 3}
+    text = build_reference_list(ref_map, only={1, 3})
+    assert "[1] a.pdf" in text
+    assert "[3] c.pdf" in text
+    assert "[2]" not in text
+
+
+# --- build_prompt with explicit ref_map ---
+
+
+def test_build_prompt_with_ref_map_uses_existing_numbers():
+    """build_prompt respects a pre-existing ref_map for numbering."""
+    ref_map = {"countries/geo.pdf": 5, "countries/europe.pdf": 6}
+    messages = build_prompt("question", _make_results(), ref_map=ref_map)
+    content = " ".join(m["content"] for m in messages)
+    assert "--- [5, p. 5] ---" in content
+    assert "--- [6, p. 12] ---" in content
+
+
+# --- build_source_elements with explicit ref_map ---
+
+
+def test_build_source_elements_with_ref_map():
+    """build_source_elements respects a pre-existing ref_map."""
+    ref_map = {"countries/geo.pdf": 5, "countries/europe.pdf": 6}
+    elements = build_source_elements(_make_results(), ref_map=ref_map)
+    assert elements[0]["name"] == "[5] countries/geo.pdf, p. 5"
+    assert elements[1]["name"] == "[6] countries/europe.pdf, p. 12"

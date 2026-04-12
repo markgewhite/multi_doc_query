@@ -5,7 +5,12 @@ import chainlit as cl
 import chromadb
 
 from src.config import ConfigError, load_config
-from src.generation.answerer import answer, build_source_elements
+from src.generation.answerer import (
+    answer,
+    build_ref_map,
+    build_reference_list,
+    build_source_elements,
+)
 from src.generation.condenser import Condenser
 from src.health_check import check_models, check_ollama
 from src.ingestion.ingest import IngestResult, ingest_folder
@@ -108,6 +113,7 @@ async def on_chat_start():
     condenser = Condenser(model=config.models.llm)
     cl.user_session.set("condenser", condenser)
     cl.user_session.set("chat_history", [])
+    cl.user_session.set("ref_map", {})
 
     # Set up Chainlit settings panel
     settings = await cl.ChatSettings(
@@ -280,18 +286,31 @@ async def on_message(message: cl.Message):
 
         retrieval_step.output = f"Retrieved {len(results)} relevant chunks"
 
+    # Build ref_map for this answer, extending the session-wide map
+    existing_ref_map = cl.user_session.get("ref_map")
+    ref_map = build_ref_map(results, existing_ref_map)
+    cl.user_session.set("ref_map", ref_map)
+
+    # Collect which reference numbers are used in this answer
+    used_nums = {ref_map[r.metadata.get("relative_path", r.metadata.get("filename", "unknown"))] for r in results}
+
     # Stream the answer token by token
     msg = cl.Message(content="")
     async for token in answer(
         query,
         results,
         model=config.models.llm,
+        ref_map=ref_map,
     ):
         await msg.stream_token(token)
+
+    # Append the reference list for sources cited in this answer
+    ref_list = build_reference_list(ref_map, only=used_nums)
+    await msg.stream_token(f"\n\n---\n**References:**\n{ref_list}")
     await msg.send()
 
     # Attach expandable source chunks below the answer
-    for el_data in build_source_elements(results):
+    for el_data in build_source_elements(results, ref_map=ref_map):
         element = cl.Text(
             name=el_data["name"],
             content=el_data["content"],

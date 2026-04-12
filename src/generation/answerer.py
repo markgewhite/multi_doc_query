@@ -14,25 +14,48 @@ SYSTEM_PROMPT = (
     "2. Cite sources inline using numeric references, e.g. [1, p. 12] or "
     "[2, Section: Methods]. Use the reference numbers shown in the source "
     "headers and the Reference List. If citing the same document on different "
-    "pages, reuse its number, e.g. [1, p. 5] and [1, p. 22].\n"
+    "pages, reuse its number, e.g. [1, p. 5] and [1, p. 22]. Do NOT "
+    "reproduce the Reference List — it will be appended automatically.\n"
     "3. If sources from different documents conflict, highlight the "
     "discrepancy and cite both sources.\n"
     "4. If no sources are relevant to the question, say so clearly."
 )
 
 
-def _build_ref_map(results: list[SearchResult]) -> dict[str, int]:
+def build_ref_map(
+    results: list[SearchResult],
+    existing: dict[str, int] | None = None,
+) -> dict[str, int]:
     """Assign a stable numeric ID to each unique document path.
 
-    Returns a dict mapping document path to its reference number (1-based).
-    Documents are numbered in the order they first appear in results.
+    Returns a new dict mapping document path to its reference number (1-based).
+    If *existing* is provided, those mappings are preserved and new documents
+    get numbers starting after the current maximum.
     """
-    ref_map: dict[str, int] = {}
+    ref_map = dict(existing) if existing else {}
+    next_num = max(ref_map.values(), default=0) + 1
     for r in results:
         path = _doc_path(r.metadata)
         if path not in ref_map:
-            ref_map[path] = len(ref_map) + 1
+            ref_map[path] = next_num
+            next_num += 1
     return ref_map
+
+
+def build_reference_list(
+    ref_map: dict[str, int],
+    only: set[int] | None = None,
+) -> str:
+    """Format a numbered reference list string.
+
+    If *only* is given, include only the reference numbers in that set.
+    """
+    lines = []
+    for path, num in sorted(ref_map.items(), key=lambda x: x[1]):
+        if only is not None and num not in only:
+            continue
+        lines.append(f"[{num}] {path}")
+    return "\n".join(lines)
 
 
 def _doc_path(metadata: dict[str, str | int]) -> str:
@@ -59,9 +82,19 @@ def _element_name(metadata: dict[str, str | int], ref_num: int) -> str:
     return f"[{ref_num}] {path}, p. {page}"
 
 
-def build_prompt(question: str, results: list[SearchResult]) -> list[dict]:
-    """Build chat messages for Ollama from a question and search results."""
-    ref_map = _build_ref_map(results)
+def build_prompt(
+    question: str,
+    results: list[SearchResult],
+    *,
+    ref_map: dict[str, int] | None = None,
+) -> list[dict]:
+    """Build chat messages for Ollama from a question and search results.
+
+    If *ref_map* is provided, it is used for numbering; otherwise a fresh
+    map is built from *results*.
+    """
+    if ref_map is None:
+        ref_map = build_ref_map(results)
 
     context_parts = []
     for r in results:
@@ -71,11 +104,8 @@ def build_prompt(question: str, results: list[SearchResult]) -> list[dict]:
 
     context = "\n\n".join(context_parts)
 
-    # Build reference list
-    ref_lines = []
-    for path, num in sorted(ref_map.items(), key=lambda x: x[1]):
-        ref_lines.append(f"[{num}] {path}")
-    ref_list = "\n".join(ref_lines)
+    # Include reference list in prompt so LLM knows the mapping
+    ref_list = build_reference_list(ref_map)
 
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -90,13 +120,18 @@ def build_prompt(question: str, results: list[SearchResult]) -> list[dict]:
     ]
 
 
-def build_source_elements(results: list[SearchResult]) -> list[dict]:
+def build_source_elements(
+    results: list[SearchResult],
+    *,
+    ref_map: dict[str, int] | None = None,
+) -> list[dict]:
     """Build source element data for Chainlit display.
 
     Returns a list of dicts with keys: name, content, display.
     Order matches the input (relevance-ranked by caller).
     """
-    ref_map = _build_ref_map(results)
+    if ref_map is None:
+        ref_map = build_ref_map(results)
 
     return [
         {
@@ -113,9 +148,10 @@ async def answer(
     results: list[SearchResult],
     *,
     model: str = "llama3.1:8b",
+    ref_map: dict[str, int] | None = None,
 ) -> AsyncIterator[str]:
     """Stream answer tokens from Ollama."""
-    messages = build_prompt(question, results)
+    messages = build_prompt(question, results, ref_map=ref_map)
     stream = ollama.chat(model=model, messages=messages, stream=True)
     for chunk in stream:
         token = chunk["message"]["content"]
