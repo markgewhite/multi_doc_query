@@ -1,5 +1,5 @@
 from src.generation.answerer import build_prompt, build_source_elements
-from src.retrieval.vector_store import SearchResult
+from src.models import SearchResult
 
 
 def _make_results():
@@ -17,6 +17,30 @@ def _make_results():
     ]
 
 
+def _make_results_same_doc():
+    """Two chunks from the same document on different pages."""
+    return [
+        SearchResult(
+            text="Chapter 1 content.",
+            metadata={"filename": "report.pdf", "relative_path": "reports/annual.pdf", "doc_type": "pdf", "page_number": 5},
+            distance=0.1,
+        ),
+        SearchResult(
+            text="Chapter 3 content.",
+            metadata={"filename": "report.pdf", "relative_path": "reports/annual.pdf", "doc_type": "pdf", "page_number": 22},
+            distance=0.2,
+        ),
+        SearchResult(
+            text="Berlin is the capital of Germany.",
+            metadata={"filename": "europe.pdf", "relative_path": "countries/europe.pdf", "doc_type": "pdf", "page_number": 12},
+            distance=0.3,
+        ),
+    ]
+
+
+# --- build_prompt tests ---
+
+
 def test_build_prompt_includes_context():
     """The prompt includes the text from search results."""
     messages = build_prompt("What is the capital of France?", _make_results())
@@ -32,16 +56,44 @@ def test_build_prompt_includes_question():
     assert "What is the capital of France?" in content
 
 
-def test_build_prompt_source_format():
-    """Context is formatted with source citations using relative path."""
+def test_build_prompt_numeric_source_headers():
+    """Context headers use numeric reference format [N]."""
     messages = build_prompt("question", _make_results())
     content = " ".join(m["content"] for m in messages)
-    assert "--- Source: countries/geo.pdf | Page 5 ---" in content
-    assert "--- Source: countries/europe.pdf | Page 12 ---" in content
+    assert "--- [1, p. 5] ---" in content
+    assert "--- [2, p. 12] ---" in content
 
 
-def test_build_prompt_uses_relative_path():
-    """build_prompt prefers relative_path over filename in source headers."""
+def test_build_prompt_reference_list_appended():
+    """A numbered reference list is appended after the context."""
+    messages = build_prompt("question", _make_results())
+    user_content = next(m["content"] for m in messages if m["role"] == "user")
+    assert "[1] countries/geo.pdf" in user_content
+    assert "[2] countries/europe.pdf" in user_content
+
+
+def test_build_prompt_same_doc_shares_number():
+    """Two chunks from the same document share the same reference number."""
+    messages = build_prompt("question", _make_results_same_doc())
+    content = " ".join(m["content"] for m in messages)
+    # Both chunks from reports/annual.pdf should be [1]
+    assert "--- [1, p. 5] ---" in content
+    assert "--- [1, p. 22] ---" in content
+    # europe.pdf should be [2]
+    assert "--- [2, p. 12] ---" in content
+
+
+def test_build_prompt_reference_list_deduplicates():
+    """Reference list has one entry per unique document, not per chunk."""
+    messages = build_prompt("question", _make_results_same_doc())
+    user_content = next(m["content"] for m in messages if m["role"] == "user")
+    # Should have exactly one entry for reports/annual.pdf
+    assert user_content.count("[1] reports/annual.pdf") == 1
+    assert user_content.count("[2] countries/europe.pdf") == 1
+
+
+def test_build_prompt_uses_relative_path_in_references():
+    """Reference list uses relative_path, not filename."""
     results = [
         SearchResult(
             text="Some text.",
@@ -50,13 +102,12 @@ def test_build_prompt_uses_relative_path():
         ),
     ]
     messages = build_prompt("question", results)
-    content = " ".join(m["content"] for m in messages)
-    assert "--- Source: reports/annual.pdf | Page 3 ---" in content
-    assert "--- Source: report.pdf" not in content
+    user_content = next(m["content"] for m in messages if m["role"] == "user")
+    assert "[1] reports/annual.pdf" in user_content
 
 
 def test_build_prompt_falls_back_to_filename():
-    """Without relative_path, build_prompt uses filename."""
+    """Without relative_path, reference list uses filename."""
     results = [
         SearchResult(
             text="Some text.",
@@ -65,8 +116,41 @@ def test_build_prompt_falls_back_to_filename():
         ),
     ]
     messages = build_prompt("question", results)
+    user_content = next(m["content"] for m in messages if m["role"] == "user")
+    assert "[1] legacy.pdf" in user_content
+
+
+def test_build_prompt_section_header_in_source():
+    """Markdown sources show section header instead of page number in context header."""
+    results = [
+        SearchResult(
+            text="Install instructions.",
+            metadata={
+                "filename": "README.md",
+                "relative_path": "README.md",
+                "doc_type": "md",
+                "page_number": 1,
+                "section_header": "Getting Started > Installation",
+            },
+            distance=0.1,
+        ),
+    ]
+    messages = build_prompt("How to install?", results)
     content = " ".join(m["content"] for m in messages)
-    assert "--- Source: legacy.pdf | Page 1 ---" in content
+    assert "--- [1, Section: Getting Started > Installation] ---" in content
+    # Reference list should still show the document path
+    user_content = next(m["content"] for m in messages if m["role"] == "user")
+    assert "[1] README.md" in user_content
+
+
+def test_build_prompt_system_prompt_numeric_format():
+    """System prompt instructs the LLM to use [N, p. X] citation format."""
+    messages = build_prompt("question", _make_results())
+    system = next(m["content"] for m in messages if m["role"] == "system")
+    assert "[1, p. 12]" in system or "[N, p." in system
+
+
+# --- build_source_elements tests ---
 
 
 def test_build_source_elements_returns_list():
@@ -79,17 +163,19 @@ def test_build_source_elements_returns_list():
         assert "display" in el
 
 
-def test_build_source_elements_name_format():
-    """Element name follows 'Source: path | Page N' format."""
-    results = [
-        SearchResult(
-            text="Some text.",
-            metadata={"filename": "report.pdf", "relative_path": "reports/annual.pdf", "doc_type": "pdf", "page_number": 5},
-            distance=0.1,
-        ),
-    ]
-    elements = build_source_elements(results)
-    assert elements[0]["name"] == "Source: reports/annual.pdf | Page 5"
+def test_build_source_elements_numeric_names():
+    """Element names include numeric reference number."""
+    elements = build_source_elements(_make_results())
+    assert elements[0]["name"] == "[1] countries/geo.pdf, p. 5"
+    assert elements[1]["name"] == "[2] countries/europe.pdf, p. 12"
+
+
+def test_build_source_elements_same_doc_shares_number():
+    """Elements from the same document share the same reference number."""
+    elements = build_source_elements(_make_results_same_doc())
+    assert elements[0]["name"] == "[1] reports/annual.pdf, p. 5"
+    assert elements[1]["name"] == "[1] reports/annual.pdf, p. 22"
+    assert elements[2]["name"] == "[2] countries/europe.pdf, p. 12"
 
 
 def test_build_source_elements_preserves_order():
@@ -109,11 +195,11 @@ def test_build_source_elements_falls_back_to_filename():
         ),
     ]
     elements = build_source_elements(results)
-    assert elements[0]["name"] == "Source: old.pdf | Page 1"
+    assert elements[0]["name"] == "[1] old.pdf, p. 1"
 
 
-def test_source_name_with_section_header():
-    """Markdown sources show section header instead of page number."""
+def test_build_source_elements_section_header():
+    """Markdown source elements show section header."""
     results = [
         SearchResult(
             text="Install instructions.",
@@ -127,23 +213,5 @@ def test_source_name_with_section_header():
             distance=0.1,
         ),
     ]
-    messages = build_prompt("How to install?", results)
-    content = " ".join(m["content"] for m in messages)
-    assert "--- Source: README.md | Section: Getting Started > Installation ---" in content
-
     elements = build_source_elements(results)
-    assert elements[0]["name"] == "Source: README.md | Section: Getting Started > Installation"
-
-
-def test_source_name_without_section_header():
-    """Non-Markdown sources still show page number (unchanged behaviour)."""
-    results = [
-        SearchResult(
-            text="Some text.",
-            metadata={"filename": "report.pdf", "doc_type": "pdf", "page_number": 7},
-            distance=0.1,
-        ),
-    ]
-    messages = build_prompt("question", results)
-    content = " ".join(m["content"] for m in messages)
-    assert "--- Source: report.pdf | Page 7 ---" in content
+    assert elements[0]["name"] == "[1] README.md, Section: Getting Started > Installation"
