@@ -8,7 +8,7 @@ Multi Doc Query is a three-stage RAG pipeline — ingestion, retrieval, generati
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                              INGESTION                                   │
 │                                                                          │
-│  Documents folder ──▶ Scanner ──▶ Loader ──▶ Chunker ──▶ VectorStore    │
+│  Documents folder ──▶ Scanner ──▶ Loader ──▶ Chunker ──▶ VectorStore     │
 │  (.pdf .docx .txt .md) (discover   (parse     (split      (embed + store │
 │                         + MD5       per-format) + metadata) in ChromaDB) │
 │                         hash)                                            │
@@ -17,20 +17,20 @@ Multi Doc Query is a three-stage RAG pipeline — ingestion, retrieval, generati
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                              RETRIEVAL                                   │
 │                                                                          │
-│  User query ──▶ Condenser ──▶ HybridRetriever ──────────────▶ Reranker  │
-│                 (rewrite      ┌──▶ BM25Index (top 20)        (cross-    │
-│                  follow-ups)  │                               encoder   │
-│                               ├──▶ VectorStore (top 20)      scores    │
-│                               │                               pairs,   │
-│                               └──▶ RRF fusion (top 30) ─────▶ top 10)  │
+│  User query ──▶ Condenser ──▶ HybridRetriever ──────────────▶ Reranker   │
+│                 (rewrite      ┌──▶ BM25Index (top 20)        (cross-     │
+│                  follow-ups)  │                               encoder    │
+│                               ├──▶ VectorStore (top 20)      scores      │
+│                               │                               pairs,     │
+│                               └──▶ RRF fusion (top 30) ─────▶ top 10)    │
 └──────────────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                              GENERATION                                  │
 │                                                                          │
 │  Top 10 chunks ──▶ Answerer ──▶ Streaming response with inline citations │
-│                    (prompt construction    [filename.pdf, p. 12]          │
-│                     + ollama.chat)                                        │
+│                    (prompt construction    [filename.pdf, p. 12]         │
+│                     + ollama.chat)                                       │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
