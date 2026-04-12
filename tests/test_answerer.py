@@ -3,6 +3,7 @@ from src.generation.answerer import (
     build_ref_map,
     build_reference_list,
     build_source_elements,
+    strip_llm_references,
 )
 from src.models import SearchResult
 
@@ -321,3 +322,60 @@ def test_build_source_elements_with_ref_map():
     elements = build_source_elements(_make_results(), ref_map=ref_map)
     assert elements[0]["name"] == "[5] countries/geo.pdf, p. 5"
     assert elements[1]["name"] == "[6] countries/europe.pdf, p. 12"
+
+
+# --- strip_llm_references tests ---
+
+
+def test_strip_llm_references_removes_trailing_section():
+    """Strips a trailing 'Reference:' or 'References:' section."""
+    text = (
+        "The answer is 42.\n\n"
+        "Reference:\n"
+        "[2, p. 1] and [1, p. 4]"
+    )
+    assert strip_llm_references(text) == "The answer is 42."
+
+
+def test_strip_llm_references_removes_with_list():
+    """Strips a trailing references section with numbered entries."""
+    text = (
+        "FPCA has been applied in rowing.\n\n"
+        "References:\n"
+        "[1] some_doc.pdf\n"
+        "[2] other_doc.pdf"
+    )
+    assert strip_llm_references(text) == "FPCA has been applied in rowing."
+
+
+def test_strip_llm_references_preserves_mid_text():
+    """Does not strip 'reference' that appears mid-text."""
+    text = "See the reference list in [1, p. 5] for details."
+    assert strip_llm_references(text) == text
+
+
+def test_strip_llm_references_no_references():
+    """Returns text unchanged when there is no trailing references section."""
+    text = "A clean answer with no references section."
+    assert strip_llm_references(text) == text
+
+
+def test_strip_llm_references_handles_bold_heading():
+    """Strips references section with markdown bold heading."""
+    text = (
+        "The answer.\n\n"
+        "**References:**\n"
+        "[1] doc.pdf"
+    )
+    assert strip_llm_references(text) == "The answer."
+
+
+def test_strip_llm_references_handles_hr_before():
+    """Strips references section preceded by a horizontal rule."""
+    text = (
+        "The answer.\n\n"
+        "---\n"
+        "References:\n"
+        "[1] doc.pdf"
+    )
+    assert strip_llm_references(text) == "The answer."

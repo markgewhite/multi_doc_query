@@ -10,6 +10,7 @@ from src.generation.answerer import (
     build_ref_map,
     build_reference_list,
     build_source_elements,
+    strip_llm_references,
 )
 from src.generation.condenser import Condenser
 from src.health_check import check_models, check_ollama
@@ -304,9 +305,10 @@ async def on_message(message: cl.Message):
     ):
         await msg.stream_token(token)
 
-    # Append the reference list for sources cited in this answer
+    # Strip any reference list the LLM generated, then append ours
+    msg.content = strip_llm_references(msg.content)
     ref_list = build_reference_list(ref_map, only=used_nums)
-    await msg.stream_token(f"\n\n---\n**References:**\n{ref_list}")
+    msg.content += f"\n\n---\n**References:**\n{ref_list}"
     await msg.send()
 
     # Attach expandable source chunks below the answer

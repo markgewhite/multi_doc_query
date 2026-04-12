@@ -1,3 +1,4 @@
+import re
 from collections.abc import AsyncIterator
 
 import ollama
@@ -56,6 +57,21 @@ def build_reference_list(
             continue
         lines.append(f"[{num}] {path}")
     return "\n".join(lines)
+
+
+_REFS_TAIL_RE = re.compile(
+    r"\n*(?:---\n)?"          # optional horizontal rule
+    r"\*{0,2}"                # optional bold markers
+    r"[Rr]eferences?:?"      # "Reference:", "References:", bold variants
+    r"\*{0,2}"                # closing bold markers
+    r"\n.*",                  # everything after
+    re.DOTALL,
+)
+
+
+def strip_llm_references(text: str) -> str:
+    """Remove any trailing reference/references section the LLM generated."""
+    return _REFS_TAIL_RE.sub("", text).rstrip()
 
 
 def _doc_path(metadata: dict[str, str | int]) -> str:
