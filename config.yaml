@@ -11,7 +11,7 @@ retrieval:
   semantic_top_k: 20
   rrf_k: 60
   rerank_top_k: 10
-  reranker_model: "bge-reranker-v2-m3"
+  reranker_model: "BAAI/bge-reranker-v2-m3"
 
 paths:
   chroma_db: "~/.multi_doc_query/chroma_db/"

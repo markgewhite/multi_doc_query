@@ -23,7 +23,7 @@ class RetrievalConfig(BaseModel):
     semantic_top_k: int = 20
     rrf_k: int = 60
     rerank_top_k: int = 10
-    reranker_model: str = "bge-reranker-v2-m3"
+    reranker_model: str = "BAAI/bge-reranker-v2-m3"
 
 
 class PathsConfig(BaseModel):
