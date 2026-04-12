@@ -5,34 +5,33 @@ Multi Doc Query is a three-stage RAG pipeline — ingestion, retrieval, generati
 ## Pipeline
 
 ```
-                         ┌─────────────────────────────────────────────────────┐
-                         │                    INGESTION                        │
-                         │                                                     │
-  Documents folder ──▶  Scanner ──▶ Loader ──▶ Chunker ──▶ VectorStore        │
-  (.pdf .docx .txt .md) (discover   (parse     (split      (embed + store     │
-                         + MD5       per-format) + metadata) in ChromaDB)      │
-                         hash)                                                 │
-                         └─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                              INGESTION                                   │
+│                                                                          │
+│  Documents folder ──▶ Scanner ──▶ Loader ──▶ Chunker ──▶ VectorStore    │
+│  (.pdf .docx .txt .md) (discover   (parse     (split      (embed + store │
+│                         + MD5       per-format) + metadata) in ChromaDB) │
+│                         hash)                                            │
+└──────────────────────────────────────────────────────────────────────────┘
 
-                         ┌─────────────────────────────────────────────────────┐
-                         │                    RETRIEVAL                         │
-                         │                                                     │
-  User query ──▶ Condenser ──▶ HybridRetriever ──────────────▶ Reranker       │
-                 (rewrite      ┌──▶ BM25Index (top 20)        (cross-encoder  │
-                  follow-ups)  │                               scores pairs,  │
-                               ├──▶ VectorStore (top 20)      returns top 10) │
-                               │                                               │
-                               └──▶ RRF fusion (top 30) ─────▶                │
-                         └─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                              RETRIEVAL                                   │
+│                                                                          │
+│  User query ──▶ Condenser ──▶ HybridRetriever ──────────────▶ Reranker  │
+│                 (rewrite      ┌──▶ BM25Index (top 20)        (cross-    │
+│                  follow-ups)  │                               encoder   │
+│                               ├──▶ VectorStore (top 20)      scores    │
+│                               │                               pairs,   │
+│                               └──▶ RRF fusion (top 30) ─────▶ top 10)  │
+└──────────────────────────────────────────────────────────────────────────┘
 
-                         ┌─────────────────────────────────────────────────────┐
-                         │                    GENERATION                        │
-                         │                                                     │
-  Top 10 chunks ──▶ Answerer ──▶ Streaming response with inline citations     │
-                    (prompt      [filename.pdf, p. 12]                         │
-                     construction                                              │
-                     + ollama.chat)                                            │
-                         └─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                              GENERATION                                  │
+│                                                                          │
+│  Top 10 chunks ──▶ Answerer ──▶ Streaming response with inline citations │
+│                    (prompt construction    [filename.pdf, p. 12]          │
+│                     + ollama.chat)                                        │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Modules
