@@ -28,25 +28,30 @@ class VectorStore:
             metadata={"hnsw:space": "cosine"},
         )
 
+    _ADD_PAGE_SIZE = 5000
+
     def add_chunks(self, chunks: list[Chunk]) -> None:
-        """Embed and store chunks in ChromaDB."""
+        """Embed and store chunks in ChromaDB.
+
+        Adds in pages to avoid SQLite's SQL variable limit.
+        """
         if not chunks:
             return
 
         texts = [c.text for c in chunks]
         embeddings = self._embed_fn(texts)
         metadatas = [c.metadata for c in chunks]
-        ids = [f"chunk_{i}" for i in range(
-            self._collection.count(),
-            self._collection.count() + len(chunks),
-        )]
+        base_id = self._collection.count()
+        ids = [f"chunk_{base_id + i}" for i in range(len(chunks))]
 
-        self._collection.add(
-            documents=texts,
-            embeddings=embeddings,
-            metadatas=metadatas,
-            ids=ids,
-        )
+        for start in range(0, len(chunks), self._ADD_PAGE_SIZE):
+            end = start + self._ADD_PAGE_SIZE
+            self._collection.add(
+                documents=texts[start:end],
+                embeddings=embeddings[start:end],
+                metadatas=metadatas[start:end],
+                ids=ids[start:end],
+            )
 
     def search(self, query: str, k: int = 5) -> list[SearchResult]:
         """Return the top-k most similar chunks for a query."""
@@ -71,10 +76,28 @@ class VectorStore:
         """Return the number of chunks in the collection."""
         return self._collection.count()
 
+    _GET_PAGE_SIZE = 5000
+
     def get_all_texts_and_metadatas(self) -> tuple[list[str], list[dict]]:
-        """Return all stored chunk texts and their metadata."""
-        result = self._collection.get()
-        return result["documents"], result["metadatas"]
+        """Return all stored chunk texts and their metadata.
+
+        Fetches in pages to avoid SQLite's SQL variable limit.
+        """
+        all_texts: list[str] = []
+        all_metadatas: list[dict] = []
+        total = self._collection.count()
+        offset = 0
+
+        while offset < total:
+            result = self._collection.get(
+                limit=self._GET_PAGE_SIZE,
+                offset=offset,
+            )
+            all_texts.extend(result["documents"])
+            all_metadatas.extend(result["metadatas"])
+            offset += self._GET_PAGE_SIZE
+
+        return all_texts, all_metadatas
 
     def get_all_texts(self) -> list[str]:
         """Return all stored chunk texts."""
